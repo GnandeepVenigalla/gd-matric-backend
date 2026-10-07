@@ -290,14 +290,11 @@ app.get('/api/invoices', async (req, res) => {
 mongoose.connect(process.env.MONGO_URI, {
   serverSelectionTimeoutMS: 5000 // fail fast if unable to connect
 })
-  .then(() => {
-    console.log('MongoDB connected successfully');
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
-  })
-  .catch(err => {
-    console.error('Fatal: Failed to connect to MongoDB. Check your connection string and IP whitelist in Atlas.');
-    console.error(err);
-    process.exit(1);
-  });
+  .then(() => console.log('MongoDB connected successfully'))
+  .catch(err => console.error('MongoDB connection error:', err));
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+module.exports = app;
