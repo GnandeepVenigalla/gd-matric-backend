@@ -60,9 +60,7 @@ const upload = multer({ storage: process.env.AWS_BUCKET_NAME ? s3Storage : stora
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error(err));
+// MongoDB connection is now established before starting the server (see bottom of file)
 
 const hashPassword = (password) => {
   return crypto.createHash('sha256').update(password).digest('hex');
@@ -289,6 +287,17 @@ app.get('/api/invoices', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+mongoose.connect(process.env.MONGO_URI, {
+  serverSelectionTimeoutMS: 5000 // fail fast if unable to connect
+})
+  .then(() => {
+    console.log('MongoDB connected successfully');
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  })
+  .catch(err => {
+    console.error('Fatal: Failed to connect to MongoDB. Check your connection string and IP whitelist in Atlas.');
+    console.error(err);
+    process.exit(1);
+  });
