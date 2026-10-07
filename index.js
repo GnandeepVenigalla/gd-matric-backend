@@ -188,15 +188,69 @@ app.get('/api/consultants', async (req, res) => {
 app.put('/api/consultants/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { client, payRate, experience, location, title } = req.body;
+    const { client, payRate, experience, location, title, recruiterId } = req.body;
     const updateData = {};
     if (client !== undefined) updateData.client = client;
     if (payRate !== undefined) updateData.payRate = payRate;
     if (experience !== undefined) updateData.experience = experience;
     if (location !== undefined) updateData.location = location;
     if (title !== undefined) updateData.title = title;
+    if (recruiterId !== undefined) {
+      if (!recruiterId) {
+        updateData.recruiterId = null; // back to default (company admin)
+      } else {
+        const consultant = await User.findById(id);
+        const recruiter = await User.findById(recruiterId);
+        if (!consultant || !recruiter || recruiter.role !== 'employer' || recruiter.companyName !== consultant.companyName) {
+          return res.status(400).json({ error: 'Invalid recruiter for this company' });
+        }
+        updateData.recruiterId = recruiter._id;
+      }
+    }
     const updated = await User.findByIdAndUpdate(id, updateData, { new: true }).select('-password');
     res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/recruiters?companyName=... — recruiters/HR (staff accounts) of a company
+app.get('/api/recruiters', async (req, res) => {
+  try {
+    const { companyName } = req.query;
+    if (!companyName) return res.status(400).json({ error: 'companyName is required' });
+    const recruiters = await User.find({ role: 'employer', companyName })
+      .select('name email title')
+      .sort({ createdAt: 1 });
+    res.json(recruiters);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/consultants/:id/recruiter — assigned recruiter, or the company admin by default
+app.get('/api/consultants/:id/recruiter', async (req, res) => {
+  try {
+    const consultant = await User.findById(req.params.id);
+    if (!consultant) return res.status(404).json({ error: 'Consultant not found' });
+
+    let recruiter = null;
+    if (consultant.recruiterId) {
+      recruiter = await User.findById(consultant.recruiterId).select('name email title companyName role');
+      // Ignore stale assignments (deleted user or moved company)
+      if (recruiter && (recruiter.role !== 'employer' || recruiter.companyName !== consultant.companyName)) recruiter = null;
+    }
+
+    const isDefault = !recruiter;
+    if (!recruiter) {
+      // Default: the company admin (first employer account created for this company)
+      recruiter = await User.findOne({ role: 'employer', companyName: consultant.companyName })
+        .sort({ createdAt: 1 })
+        .select('name email title');
+    }
+
+    if (!recruiter) return res.json(null);
+    res.json({ id: recruiter._id, name: recruiter.name, email: recruiter.email, title: recruiter.title, isDefault });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }

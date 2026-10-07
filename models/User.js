@@ -11,7 +11,9 @@ const userSchema = new mongoose.Schema({
   client: { type: String, default: 'Bench' },
   payRate: { type: Number, default: 0 },
   experience: { type: String, default: '5 Years' },
-  location: { type: String, default: 'Remote' }
+  location: { type: String, default: 'Remote' },
+  // Recruiter/HR assigned to this consultant. Null → falls back to the company admin.
+  recruiterId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);
