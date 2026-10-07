@@ -293,6 +293,13 @@ mongoose.connect(process.env.MONGO_URI, {
   .then(() => console.log('MongoDB connected successfully'))
   .catch(err => console.error('MongoDB connection error:', err));
 
+// Global error handler — catches errors thrown by middleware such as the
+// multer/S3 upload, which happen before the route's own try/catch runs.
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(err.status || 500).json({ error: err.message || 'Server error' });
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
