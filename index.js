@@ -60,7 +60,38 @@ const upload = multer({ storage: process.env.AWS_BUCKET_NAME ? s3Storage : stora
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 
-// MongoDB connection is now established before starting the server (see bottom of file)
+// --- MongoDB connection (serverless-safe) ---
+// On Vercel each instance may be cold-started; a single failed connect at
+// import time used to leave the instance broken (every query buffered until it
+// timed out). Instead we connect lazily, reuse the connection, and retry if a
+// previous attempt failed.
+let mongoConnPromise = null;
+function connectDB() {
+  if (mongoose.connection.readyState === 1) return Promise.resolve();
+  if (!mongoConnPromise) {
+    if (!process.env.MONGO_URI) {
+      return Promise.reject(new Error('MONGO_URI is not set in this environment'));
+    }
+    mongoConnPromise = mongoose
+      .connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 10000 })
+      .then(() => console.log('MongoDB connected successfully'))
+      .catch(err => {
+        mongoConnPromise = null; // allow the next request to retry
+        console.error('MongoDB connection error:', err);
+        throw err;
+      });
+  }
+  return mongoConnPromise;
+}
+
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    res.status(503).json({ error: 'Database unavailable: ' + err.message });
+  }
+});
 
 const hashPassword = (password) => {
   return crypto.createHash('sha256').update(password).digest('hex');
@@ -341,11 +372,8 @@ app.get('/api/invoices', async (req, res) => {
   }
 });
 
-mongoose.connect(process.env.MONGO_URI, {
-  serverSelectionTimeoutMS: 5000 // fail fast if unable to connect
-})
-  .then(() => console.log('MongoDB connected successfully'))
-  .catch(err => console.error('MongoDB connection error:', err));
+// Warm up the DB connection on startup (requests will retry if this fails)
+connectDB().catch(() => {});
 
 // Global error handler — catches errors thrown by middleware such as the
 // multer/S3 upload, which happen before the route's own try/catch runs.
